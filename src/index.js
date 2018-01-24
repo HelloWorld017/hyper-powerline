@@ -17,72 +17,51 @@ export function reduceUI(state, { type, config }) {
 	return state
 };
 
-export function mapTermsState (state, map) {
-	return Object.assign(map, {
-		powerline: state.ui.powerline
-	});
-};
+export const middleware = store => next => action => {
+	if (action.type !== 'SESSION_PTY_DATA') {
+		next(action);
+		return;
+	}
 
-export function decorateTerm(Term, {React}) {
-	return class extends React.Component {
-		constructor (props, context) {
-			super(props, context);
+	const config = store.getState().ui.powerline;
+	const terminal = getTerminal(config.terminal);
 
-			this._onData = this._onData.bind(this);
-		}
+	const startupMatch = terminalMatcher(action.data, terminal.startupRegex);
+	const promptMatch = terminalMatcher(action.data, terminal.promptRegex);
 
-		_onData(data) {
-			const next = (data) => {
-				if (this.props.onData) this.props.onData(data);
-			};
+	if(promptMatch || startupMatch) {
+		(async () => {
+			let directory = undefined;
 
-			const config = this.props.powerline;
-			const terminal = getTerminal(config.terminal);
+			if(promptMatch) {
+				directory = promptMatch[1];
 
-			const startupMatch = terminalMatcher(data, terminal.startupRegex);
-			const promptMatch = terminalMatcher(data, terminal.promptRegex);
+				let powerline = await buildPowerline(config.prompt, {
+					config,
+					directory,
+					terminal
+				});
 
-			if(promptMatch || startupMatch) {
-				(async () => {
-					let directory = undefined;
-
-					if(promptMatch) {
-						directory = promptMatch[1];
-
-						let powerline = await buildPowerline(config.prompt, {
-							config,
-							directory,
-							terminal
-						});
-
-						data = data.replace(terminal.promptRegex, powerline);
-					}
-
-					if(startupMatch) {
-						if(startupMatch[1]) directory = startupMatch[1];
-
-						const startupPowerline = await buildPowerline(config.startup, {
-							config,
-							directory,
-							terminal
-						});
-
-						data = data.replace(terminal.startupRegex, startupPowerline);
-					}
-
-					next(data);
-				})();
-
-				return;
+				action.data = action.data.replace(terminal.promptRegex, powerline);
 			}
 
-			next(data);
-		}
+			if(startupMatch) {
+				if(startupMatch[1]) directory = startupMatch[1];
 
-		render () {
-			return React.createElement(Term, Object.assign({}, this.props, {
-				onData: this._onData
-			}));
-		}
+				const startupPowerline = await buildPowerline(config.startup, {
+					config,
+					directory,
+					terminal
+				});
+
+				action.data = action.data.replace(terminal.startupRegex, startupPowerline);
+			}
+
+			next(action);
+		})();
+
+		return;
 	}
-}
+
+	next(action);
+};
