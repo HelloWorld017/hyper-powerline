@@ -1,10 +1,9 @@
 import chalk from 'chalk';
-import platform from './core/platform';
 
 const color = new chalk.constructor({level: 3});
 
-export function buildSections(info, config) {
-	const sectionBreak = config.sectionThick;
+export function buildSections(info, {config, directory}) {
+	const sectionBreak = config.sectionHard;
 	let text = '';
 
 	const last = info.filter((v) => v !== null).reduce((prev, curr) => {
@@ -28,19 +27,22 @@ export function buildSections(info, config) {
 };
 
 export async function buildPowerline(plugins, config) {
-	const sectionBreak = config.sectionThick;
 	const info = [];
 
-	for(v of plugins) {
+	for(let v of plugins) {
 		const sectionLine = [];
-		for(plugin of v) {
-			const loadedPlugin = require('../plugins/' + plugin);
-			sectionLine.push(await loadedPlugin());
+		for(let plugin of v) {
+			const pluginInfo = plugin.split(':');
+			const pluginColor = pluginInfo[1];
+
+			const loadedPlugin = require('../plugin/' + pluginInfo[0]);
+			const pluginResult = await loadedPlugin(config);
+
+			if(pluginResult) sectionLine.push([pluginResult, pluginColor]);
 		}
 
 		info.push(buildSections(sectionLine, config));
 	}
-	info.push('', '');
 
-	return info.join(platform.lineBreak);
+	return info.join(config.terminal.lineBreak);
 };

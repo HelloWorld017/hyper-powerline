@@ -1,7 +1,8 @@
 import {buildPowerline} from './core/powerline';
+import terminalMatcher from './core/matcher';
 import fs from 'fs';
+import getTerminal from './terminal';
 import path from 'path';
-import platform from './core/platform';
 
 export function reduceUI(state, { type, config }) {
 	switch (type) {
@@ -14,12 +15,6 @@ export function reduceUI(state, { type, config }) {
 	}
 
 	return state
-}
-
-export function decorateConfig(config) {
-	return Object.assign({}, config, {
-		css: fs.readFileSync(path.join(__dirname, 'theme.css'), 'utf8')
-	});
 };
 
 export const middleware = store => next => action => {
@@ -28,34 +23,40 @@ export const middleware = store => next => action => {
 		return;
 	}
 
-	const config = store.getState().powerline;
-	const {data} = action;
-	console.log(data);
+	const config = store.getState().ui.powerline;
+	const terminal = getTerminal(config.terminal);
 
-	if (platform.cmdRegex.test(action.data)) {
+	const startupMatch = terminalMatcher(action.data, terminal.startupRegex);
+	const promptMatch = terminalMatcher(action.data, terminal.promptRegex);
+
+	if(promptMatch || startupMatch) {
 		(async () => {
-			const powerline = await buildPowerline(config.terminal, {
-				config
-			});
-			action.data = platform.lineBreak + powerline;
-			next(action);
-		})();
+			let directory = undefined;
 
-		return;
-	}
+			if(promptMatch) {
+				directory = promptMatch[1];
 
-	const terminalMatch = action.data.match(platform.terminalRegex);
-	if(terminalMatch) {
-		(async () => {
-			const originalText = terminalMatch.substr(terminalMatch.index);
-			const directory = terminalMatch[1];
+				let powerline = await buildPowerline(config.prompt, {
+					config,
+					directory,
+					terminal
+				});
 
-			const powerline = await buildPowerline(config.terminal, {
-				config,
-				directory
-			});
+				action.data = action.data.replace(terminal.promptRegex, powerline);
+			}
 
-			action.data = originalText + powerline;
+			if(startupMatch) {
+				if(startupMatch[1]) directory = startupMatch[1];
+
+				const startupPowerline = await buildPowerline(config.startup, {
+					config,
+					directory,
+					terminal
+				});
+
+				action.data = action.data.replace(terminal.startupRegex, startupPowerline);
+			}
+
 			next(action);
 		})();
 
